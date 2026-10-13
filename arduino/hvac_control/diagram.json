@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "author": "Nassim Bakkas",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-arduino-uno", "id": "uno", "top": 90, "left": 40, "attrs": {} },
+    {
+      "type": "wokwi-dht22",
+      "id": "dht1",
+      "top": -60,
+      "left": 150,
+      "attrs": { "temperature": "26.5", "humidity": "45" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "servo1",
+      "top": -40,
+      "left": 330,
+      "attrs": { "horizontal": "" }
+    },
+    {
+      "type": "wokwi-led",
+      "id": "led1",
+      "top": 250,
+      "left": 160,
+      "attrs": { "color": "red", "label": "conditioning" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_led",
+      "top": 250,
+      "left": 60,
+      "attrs": { "value": "220" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_pullup",
+      "top": -20,
+      "left": 250,
+      "attrs": { "value": "10000" }
+    }
+  ],
+  "connections": [
+    [ "uno:GND.1", "dht1:GND", "black", [ "v10", "h-40" ] ],
+    [ "uno:5V", "dht1:VCC", "red", [ "v-20", "h40" ] ],
+    [ "uno:2", "dht1:SDA", "green", [ "v-30", "h20" ] ],
+    [ "dht1:SDA", "r_pullup:1", "green", [ "v-10", "h30" ] ],
+    [ "r_pullup:2", "uno:5V", "red", [ "v40", "h-60" ] ],
+
+    [ "uno:9", "servo1:PWM", "orange", [ "v-40", "h120" ] ],
+    [ "uno:5V", "servo1:V+", "red", [ "v-50", "h200" ] ],
+    [ "uno:GND.2", "servo1:GND", "black", [ "v-60", "h220" ] ],
+
+    [ "uno:7", "r_led:1", "green", [ "v60", "h-20" ] ],
+    [ "r_led:2", "led1:A", "green", [ "h20" ] ],
+    [ "led1:C", "uno:GND.3", "black", [ "v30", "h-80" ] ]
+  ],
+  "dependencies": {}
+}

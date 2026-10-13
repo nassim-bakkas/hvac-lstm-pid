@@ -1,18 +1,42 @@
-# HVAC Energy Optimization with a Hybrid LSTM + PID Model
+# HVAC Energy Optimization with a Hybrid LSTM + PID Model — A Simulation Study
 
 *Optimisation énergétique des systèmes CVC par un modèle hybride d'IA*
 
-Forecasting temperature with an LSTM network and correcting it with a PID
-controller, to estimate the minimum thermal energy an HVAC system needs over a
-24-hour horizon.
+**A simulation study.** Forecasting temperature with an LSTM network and
+correcting it with a PID controller, to estimate the minimum thermal energy an
+HVAC system needs over a 24-hour horizon.
 
-> **Context.** This was my TIPE research project, carried out in *classe
-> préparatoire* (CPGE) in 2023 under the supervision of M. Ezzahori Hassan.
-> The code here is a cleaned-up and reproducible version of the original work;
-> the physics, model architecture and results are unchanged. The
+> **Context.** This was my TIPE study, carried out in *classe préparatoire*
+> (CPGE) in 2023 under the supervision of M. Ezzahori Hassan. The code here is
+> a cleaned-up and reproducible version of the original work; the physics,
+> model architecture and results are unchanged. The
 > [Limitations](#limitations) section is deliberately detailed — several of the
 > methodological choices below would not survive a rigorous review, and saying
 > so is more useful than pretending otherwise.
+
+### Scope
+
+This is an **étude** — a modelling and simulation study, not a built system.
+No physical prototype was constructed and no HVAC unit was instrumented.
+Specifically:
+
+- The **thermal model** is analytical ($Q = \dot{m} c_p \Delta T$), with a
+  fixed mass flow rate and a single lumped temperature.
+- The **control electronics** were simulated in [Wokwi](https://wokwi.com/)
+  (Arduino UNO + DHT22 sensor + servo damper), never assembled on a bench.
+- The **temperature data** is real, but it is outdoor weather from a public
+  API — not measurements taken inside a building.
+- The **gym case** is an applied numerical scenario used to put the energy
+  figures in context, not a monitored installation.
+
+What the study does establish is the modelling chain end to end: physical
+relation → data → forecast → control correction → energy estimate.
+
+**Simulated control circuit** (Wokwi): an Arduino UNO reads temperature and
+humidity from a DHT22 sensor and drives a servo-actuated damper plus a status
+LED.
+
+![Wokwi simulation circuit](figures/00_wokwi_circuit.png)
 
 ---
 
@@ -201,4 +225,4 @@ data/               datasets (gitignored)
 
 ## Author
 
-**Nassim Bakkas** — TIPE, CPGE 2023. Supervisor: M. Ezzahori Hassan.
+**Nassim Bakkas** — TIPE study, CPGE 2023. Supervisor: M. Ezzahori Hassan.

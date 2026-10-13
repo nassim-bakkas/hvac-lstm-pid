@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 250" width="1160" height="250" role="img" aria-label="Modelling chain: weather data, preprocessing, LSTM forecast, PID correction, energy estimate">
+  <title>Modelling chain from weather data to energy estimate</title>
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1160" height="250" rx="14" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
+
+  <g font-family="Helvetica, Arial, sans-serif">
+
+    <!-- stage 1 -->
+    <rect x="35" y="80" width="170" height="110" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="120" y="118" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">Open-Meteo</text>
+    <text x="120" y="142" text-anchor="middle" font-size="12" fill="#475569">hourly temperature</text>
+    <text x="120" y="162" text-anchor="middle" font-size="12" fill="#475569">168 points (7 days)</text>
+
+    <!-- stage 2 -->
+    <rect x="265" y="80" width="170" height="110" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="350" y="118" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">Preprocessing</text>
+    <text x="350" y="142" text-anchor="middle" font-size="12" fill="#475569">interpolate, scale</text>
+    <text x="350" y="162" text-anchor="middle" font-size="12" fill="#475569">48 h sliding window</text>
+
+    <!-- stage 3 -->
+    <rect x="495" y="80" width="170" height="110" rx="10" fill="#ffffff" stroke="#2563eb" stroke-width="2.5"/>
+    <text x="580" y="118" text-anchor="middle" font-size="15" font-weight="bold" fill="#1d4ed8">LSTM</text>
+    <text x="580" y="142" text-anchor="middle" font-size="12" fill="#475569">100 → 50 → 25 → 1</text>
+    <text x="580" y="162" text-anchor="middle" font-size="12" fill="#475569">predicts T(t+1)</text>
+
+    <!-- stage 4 -->
+    <rect x="725" y="80" width="170" height="110" rx="10" fill="#ffffff" stroke="#2563eb" stroke-width="2.5"/>
+    <text x="810" y="118" text-anchor="middle" font-size="15" font-weight="bold" fill="#1d4ed8">PID</text>
+    <text x="810" y="142" text-anchor="middle" font-size="12" fill="#475569">Kp·e + Ki·Σe + Kd·Δe</text>
+    <text x="810" y="162" text-anchor="middle" font-size="12" fill="#475569">corrects the forecast</text>
+
+    <!-- stage 5 -->
+    <rect x="955" y="80" width="170" height="110" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="1040" y="118" text-anchor="middle" font-size="15" font-weight="bold" fill="#0f172a">Energy</text>
+    <text x="1040" y="142" text-anchor="middle" font-size="12" fill="#475569">Q = m · cp · |T − 22|</text>
+    <text x="1040" y="162" text-anchor="middle" font-size="12" fill="#475569">summed over 24 h</text>
+
+    <!-- arrows -->
+    <g stroke="#64748b" stroke-width="2" marker-end="url(#ar)">
+      <line x1="205" y1="135" x2="258" y2="135"/>
+      <line x1="435" y1="135" x2="488" y2="135"/>
+      <line x1="665" y1="135" x2="718" y2="135"/>
+      <line x1="895" y1="135" x2="948" y2="135"/>
+    </g>
+
+    <g font-size="11" fill="#64748b" text-anchor="middle">
+      <text x="231" y="126">series</text>
+      <text x="461" y="126">windows</text>
+      <text x="691" y="126">forecast</text>
+      <text x="921" y="126">corrected</text>
+    </g>
+
+    <text x="580" y="222" text-anchor="middle" font-size="12" fill="#94a3b8">the two blue stages form the hybrid model</text>
+  </g>
+</svg>

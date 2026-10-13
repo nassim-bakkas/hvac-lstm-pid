@@ -5,6 +5,10 @@ loop compares it to the 22 °C comfort setpoint, and a servo-actuated damper
 opens proportionally to the control output. An LED indicates that the system is
 actively conditioning.
 
+![Closed-loop damper control](../figures/diagram_control_loop.svg)
+
+The circuit as simulated:
+
 ![Circuit](../figures/00_wokwi_circuit.png)
 
 | Component | Pin | Notes |

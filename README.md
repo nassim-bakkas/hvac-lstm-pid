@@ -6,13 +6,48 @@
 correcting it with a PID controller, to estimate the minimum thermal energy an
 HVAC system needs over a 24-hour horizon.
 
-> **Context.** This was my TIPE study, carried out in *classe préparatoire*
-> (CPGE) in 2023 under the supervision of M. Ezzahori Hassan. The code here is
-> a cleaned-up and reproducible version of the original work; the physics,
-> model architecture and results are unchanged. The
-> [Limitations](#limitations) section is deliberately detailed — several of the
-> methodological choices below would not survive a rigorous review, and saying
-> so is more useful than pretending otherwise.
+> **Context.** This began as my TIPE study, carried out in *classe préparatoire*
+> (CPGE) in 2023 under the supervision of M. Ezzahori Hassan. It was revisited
+> in 2026 and tested far more rigorously than the original ever was. Both
+> versions live here, because the difference between them is the most
+> interesting thing in the repository.
+
+## The two versions
+
+**v1 — TIPE, 2023.** Seven days of hourly data, an LSTM, a PID correction, and
+a headline claim of roughly 7 % energy saving. `src/main.py` still reproduces
+it exactly, methodological flaws intact, so the original result can be
+regenerated rather than merely described.
+
+**v2 — re-examination, 2026.** Same physics, same architecture, rebuilt around
+an evaluation that can actually support a claim. `src/train_split.py` runs it.
+It does not confirm v1. It retracts v1's headline number and replaces it with a
+smaller result that holds up.
+
+| | v1 (2023) | v2 (2026) |
+|---|---|---|
+| Dataset | 168 h (7 days) | 6 792 h (9+ months) |
+| Split | train / test | train / **validation** / test |
+| Validation set | *the test set* | separate block |
+| Scaler fitted on | whole series | training block only |
+| Test horizon | 24 h | 719 h |
+| Baseline compared against | *none* | persistence (0.465 °C) |
+| Forecast accuracy | not meaningfully measurable | 0.423 °C RMSE |
+| Headline claim | ~7 % energy saving | **retracted** — the figure is run-to-run noise |
+| Role of the PID | corrects the forecast | tested and rejected for that job |
+| Best forecast | — | LSTM + lag-24 correction, **0.404 °C** |
+| Control stage | a screenshot | compile-verified, simulated, telemetry checked |
+
+The honest summary: **v1's main claim did not survive contact with a proper
+test set, and the component the study was named after turned out not to belong
+where it was put.** What replaced them is smaller, but it is measured,
+reproducible, and explained.
+
+> **On authorship.** The 2023 study — the physical modelling, the control
+> theory, the experimental design — is my own work from CPGE. The 2026
+> re-examination was carried out with AI assistance, which is disclosed here
+> and in the commit history. The limitations it documents are findings about my
+> own earlier work, kept rather than quietly fixed.
 
 ### Scope
 
@@ -335,7 +370,7 @@ cd hvac-lstm-pid
 pip install -r requirements.txt
 ```
 
-Reproduce the original 7-day study:
+**v1** — reproduce the original 2023 study, flaws intact:
 
 ```bash
 python src/fetch_data.py --start 2024-06-10 --end 2024-06-16 \
@@ -343,7 +378,7 @@ python src/fetch_data.py --start 2024-06-10 --end 2024-06-16 \
 python src/main.py --data data/temperature.csv --no-iqr
 ```
 
-Run the extended evaluation on 2026 data (also writes an Excel copy):
+**v2** — the re-examination on 2026 data (also writes an Excel copy):
 
 ```bash
 python src/fetch_data.py --start 2026-01-01 --end 2026-10-10 --chunk-days 90 \
@@ -372,9 +407,9 @@ src/
   model.py          LSTM architecture and training
   pid.py            PID controller and forecast correction
   energy.py         Q = m_dot · cp · |T − T_ref|
-  main.py           end-to-end pipeline (reproduces the original 7-day run)
-  train_split.py    extended run: train/val/test split, baseline, gain sweeps
-  analyze_residuals.py  residual autocorrelation diagnostic
+  main.py           v1: reproduces the original 2023 run, flaws intact
+  train_split.py    v2: train/val/test split, baseline, gain sweeps
+  analyze_residuals.py  v2: residual autocorrelation diagnostic
 arduino/
   hvac_control/     Wokwi sketch: DHT22 -> PID -> servo damper (reconstructed)
 figures/            result plots from the original study, plus original diagrams

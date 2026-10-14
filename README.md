@@ -182,6 +182,87 @@ Note that the `Ki = 0` rows are *not* evidence of a good forecaster. They look
 excellent because the correction is fed the measured temperature — limitation 2
 below — so they measure how well the loop tracks a value it was already given.
 
+### Does the PID belong in the forecast chain at all?
+
+The study's central claim is the *hybridisation* of LSTM and PID. That claim
+deserves a direct test rather than a caveat, so here is one.
+
+A PID that corrects a forecast using the value it is forecasting cannot be
+deployed. But correcting a forecast from its **own past errors** is legitimate
+and routine — at hour *t* you know how wrong the forecast for *t* was, because
+*t* has happened, and you can use it to adjust *t+1*. That is one line's
+difference (`correct_predictions_causal` in `src/pid.py`), and it makes the
+PID a real, deployable component.
+
+Tested on the same 719-hour window, it never helps:
+
+| Kp | Ki | Kd | test RMSE | vs LSTM |
+|---|---|---|---|---|
+| 0.10 | 0.00 | 0.00 | 0.425 °C | +0.45 % |
+| 0.30 | 0.00 | 0.00 | 0.441 °C | +4.27 % |
+| 0.50 | 0.00 | 0.00 | 0.472 °C | +11.60 % |
+| 0.80 | 0.00 | 0.00 | 0.540 °C | +27.78 % |
+| 0.50 | 0.10 | 0.05 | 0.921 °C | +117.82 % |
+
+The damage grows monotonically with gain, so the best setting is **Kp → 0**:
+no correction at all. The implementation is not at fault — on a synthetic
+constant bias it cuts RMSE from 1.00 to 0.07 °C, and on synthetic white noise
+it correctly makes things worse.
+
+The reason is visible in the residuals:
+
+![Autocorrelation of the forecast residuals](figures/08_residual_acf.png)
+
+At lag 1 the autocorrelation is **+0.003**. The recent errors a PID acts on are
+white noise — there is nothing to latch onto, which is a compliment to the
+LSTM: it has already extracted the short-range predictable structure.
+
+**But one lag is not white.** At **lag 24** the autocorrelation is **+0.29**,
+four times outside the 95 % band. The model makes an error that repeats at the
+same hour each day — residual diurnal structure it never learned.
+
+That is exploitable, just not by a PID. The correction it calls for is
+seasonal rather than proportional-integral-derivative:
+
+```
+corrected[i] = prediction[i] + k · (measured[i−24] − prediction[i−24])
+```
+
+| forecast | test RMSE |
+|---|---|
+| LSTM alone | 0.4229 °C |
+| LSTM + PID (causal, best gain) | 0.4249 °C |
+| **LSTM + lag-24 correction** | **0.4039 °C  (−4.5 %)** |
+
+For a one-term linear correction the variance-minimising coefficient is the
+autocorrelation at that lag, and the empirical optimum (k ≈ 0.30) matches the
+measured value (0.295) — so this is structural, not a curve fit.
+
+The finding is stable across training runs. A second, independently trained
+model gave a lag-24 autocorrelation of **+0.293** (against +0.295) and a
+seasonal-correction gain of **−4.63 %** (against −4.50 %), while the causal PID
+again failed to beat the raw forecast. Compare that with the "energy saving" in
+limitation 1, which swings by 75 % between identical runs — this effect is
+reproducible in a way that one is not.
+
+*Caveat:* k here is taken from the test window's own ACF, which makes −4.5 % a
+mildly optimistic estimate; a deployable version fits k on the validation
+block. The agreement between the optimum and the independently measured
+autocorrelation is what argues the effect is real.
+
+**Conclusion.** In the forecast chain the PID has no job: it is a feedback
+controller applied where there is no plant, no actuator and no loop. Its proper
+place is the control stage — exactly where [`arduino/`](arduino/) puts it,
+acting on measured error to drive the damper. A defensible version of this
+study's architecture is therefore:
+
+- **forecasting:** LSTM + lag-24 bias correction
+- **control:** LSTM forecast as feedforward, PID as feedback on measured
+  indoor temperature
+
+Which is a more useful result than the original claim, and it is the direction
+any continuation of this work should take.
+
 ---
 
 ## Limitations
@@ -216,7 +297,10 @@ an inflated claim.
    almost perfectly. `src/pid.py` keeps the original behaviour but documents
    the constraint. The gain sweep above shows the second half of the problem:
    over a long horizon the original gains are not merely flattering, they are
-   actively harmful.
+   actively harmful. The causal, deployable version was also built and tested —
+   it never improves the forecast at any gain, because the residuals it would
+   act on are white noise. See *Does the PID belong in the forecast chain at
+   all?* above for the measurement and for the correction that does work.
 
 3. ~~**Test-set leakage.**~~ **Fixed in the extended run.** The original passed
    the test set as `validation_data` while early-stopping on `val_loss`, so the
@@ -289,7 +373,8 @@ src/
   pid.py            PID controller and forecast correction
   energy.py         Q = m_dot · cp · |T − T_ref|
   main.py           end-to-end pipeline (reproduces the original 7-day run)
-  train_split.py    extended run: train/val/test split, baseline, gain sweep
+  train_split.py    extended run: train/val/test split, baseline, gain sweeps
+  analyze_residuals.py  residual autocorrelation diagnostic
 arduino/
   hvac_control/     Wokwi sketch: DHT22 -> PID -> servo damper (reconstructed)
 figures/            result plots from the original study, plus original diagrams

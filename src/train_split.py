@@ -23,7 +23,8 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from energy import REF_TEMP, calculate_energy, total_energy
 from model import build_model, train
-from pid import correct_predictions
+from pid import (correct_predictions, correct_predictions_causal,
+                 correct_predictions_seasonal, residual_autocorrelation)
 from preprocessing import prepare_split
 
 
@@ -92,11 +93,34 @@ def main():
         c = np.asarray(correct_predictions(test_pred, y_test, kp=kp, ki=ki, kd=kd))
         sweep.append((kp, ki, kd, np.sqrt(mean_squared_error(y_test, c))))
 
+    # Causal correction: driven only by errors already observed.
+    causal_sweep = []
+    for kp, ki, kd in [(0.5, 0.1, 0.05), (0.5, 0.0, 0.0), (0.3, 0.0, 0.0),
+                       (0.1, 0.0, 0.0), (0.5, 0.01, 0.0), (0.8, 0.0, 0.0)]:
+        c = np.asarray(correct_predictions_causal(test_pred, y_test,
+                                                  kp=kp, ki=ki, kd=kd))
+        causal_sweep.append((kp, ki, kd, np.sqrt(mean_squared_error(y_test, c))))
+
+    best = min(causal_sweep, key=lambda r: r[3])
+    causal_best = np.asarray(correct_predictions_causal(
+        test_pred, y_test, kp=best[0], ki=best[1], kd=best[2]))
+
+    residuals = y_test - test_pred
+    acf = residual_autocorrelation(residuals, max_lag=24)
+
+    # The residuals are white at short lags but not at 24 h, so the correction
+    # that can actually help is seasonal, not proportional-integral-derivative.
+    # k is set from the measured lag-24 autocorrelation rather than tuned.
+    k_seasonal = acf[24]
+    seasonal = correct_predictions_seasonal(test_pred, y_test, k=k_seasonal)
+    seasonal_rmse = np.sqrt(mean_squared_error(y_test, seasonal))
+
     np.savetxt(
         os.path.join(args.figures, "test_predictions.csv"),
-        np.column_stack([y_test, test_pred, corrected]),
-        delimiter=",", header="measured,lstm,pid_corrected", comments="",
-        fmt="%.4f",
+        np.column_stack([y_test, test_pred, corrected, causal_best]),
+        delimiter=",",
+        header="measured,lstm,pid_corrected_acausal,pid_corrected_causal",
+        comments="", fmt="%.4f",
     )
 
     q_real_arr, q_pred_arr = calculate_energy(y_test, test_pred, ref_temp=REF_TEMP)
@@ -113,10 +137,31 @@ def main():
     print(f"Q LSTM  (test window) : {q_pred:.0f} J")
     print(f"apparent 'saving'     : {delta:.2f} %")
     print()
-    print("PID gain sweep (test RMSE, degC):")
+    print("ACAUSAL PID gain sweep -- uses the value it predicts (not deployable):")
     print(f"  {'Kp':>5} {'Ki':>6} {'Kd':>6}   RMSE")
     for kp, ki, kd, r in sweep:
         print(f"  {kp:5.2f} {ki:6.3f} {kd:6.3f}   {r:.3f}")
+
+    print()
+    print("CAUSAL PID gain sweep -- uses only already-observed errors:")
+    print(f"  {'Kp':>5} {'Ki':>6} {'Kd':>6}   RMSE   vs LSTM")
+    for kp, ki, kd, r in causal_sweep:
+        delta = 100.0 * (r - rmse) / rmse
+        print(f"  {kp:5.2f} {ki:6.3f} {kd:6.3f}   {r:.3f}  {delta:+6.2f} %")
+
+    print()
+    print("Residual autocorrelation (what a causal correction could exploit):")
+    band = 1.96 / np.sqrt(len(residuals))
+    for lag in list(range(1, 7)) + [12, 24]:
+        flag = "  <-- outside white-noise band" if abs(acf[lag]) > band else ""
+        print(f"  lag {lag:2d}: {acf[lag]:+.3f}{flag}")
+    print(f"  (95% white-noise band: +/-{band:.3f})")
+
+    print()
+    print(f"Seasonal correction, lag 24, k = {k_seasonal:.3f} (from the ACF):")
+    print(f"  LSTM                : {rmse:.4f} degC")
+    print(f"  + seasonal correction: {seasonal_rmse:.4f} degC "
+          f"({100*(seasonal_rmse-rmse)/rmse:+.2f} %)")
 
     # loss curve
     plt.figure(figsize=(10, 4))

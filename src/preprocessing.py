@@ -60,7 +60,14 @@ def create_dataset(series, look_back=48):
 
 
 def prepare(path, look_back=48, test_size=24, apply_iqr=True, column="temperature"):
-    """Full pipeline: load -> (filter) -> scale -> window -> train/test split."""
+    """Original pipeline: load -> (filter) -> scale -> window -> train/test split.
+
+    Kept so the published 7-day results can be reproduced. It has two known
+    flaws, both documented in the README: there is no validation set separate
+    from the test set, and the scaler is fitted on the whole series, which lets
+    the test range leak into training. Use `prepare_split` instead for an
+    honest evaluation.
+    """
     data = load_series(path, column)
     if apply_iqr:
         data = filter_outliers(data, column)
@@ -80,4 +87,66 @@ def prepare(path, look_back=48, test_size=24, apply_iqr=True, column="temperatur
         "scaler": scaler,
         "temp": temp,
         "look_back": look_back,
+    }
+
+
+def _window(series, look_back):
+    x, y = create_dataset(series, look_back)
+    return np.reshape(x, (x.shape[0], x.shape[1], 1)), y
+
+
+def prepare_split(path, look_back=48, test_size=720, val_size=720,
+                  apply_iqr=False, column="temperature"):
+    """Chronological train / validation / test pipeline.
+
+    Three differences from `prepare`, each removing a specific flaw:
+
+    1. The series is cut into three *contiguous* blocks before windowing, so no
+       training window ever overlaps validation or test data.
+    2. The scaler is fitted on the training block alone. Fitting it on the whole
+       series would tell the model the min and max of data it has not seen.
+    3. Validation and test are separate, so early stopping never reads the test
+       set.
+
+    `test_size` and `val_size` are counted in hours. Defaults of 720 give one
+    month each, which needs a dataset of at least a few months.
+    """
+    data = load_series(path, column)
+    if apply_iqr:
+        data = filter_outliers(data, column)
+
+    temp = data[column].values.reshape(-1, 1)
+    n = len(temp)
+    if n < look_back + val_size + test_size + 48:
+        raise ValueError(
+            f"series has {n} points, too short for look_back={look_back}, "
+            f"val_size={val_size}, test_size={test_size}"
+        )
+
+    cut_test = n - test_size
+    cut_val = cut_test - val_size
+
+    train_raw = temp[:cut_val]
+    # Each block carries `look_back` hours of preceding context so its first
+    # window is complete, without that context ever becoming a target.
+    val_raw = temp[cut_val - look_back : cut_test]
+    test_raw = temp[cut_test - look_back :]
+
+    scaler = MinMaxScaler(feature_range=(0, 1))
+    scaler.fit(train_raw)
+
+    x_train, y_train = _window(scaler.transform(train_raw), look_back)
+    x_val, y_val = _window(scaler.transform(val_raw), look_back)
+    x_test, y_test = _window(scaler.transform(test_raw), look_back)
+
+    print(f"train {len(x_train)} | val {len(x_val)} | test {len(x_test)} windows")
+
+    return {
+        "x_train": x_train, "y_train": y_train,
+        "x_val": x_val, "y_val": y_val,
+        "x_test": x_test, "y_test": y_test,
+        "scaler": scaler,
+        "temp": temp,
+        "look_back": look_back,
+        "test_start": cut_test,
     }

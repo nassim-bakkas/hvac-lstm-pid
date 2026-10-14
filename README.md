@@ -126,6 +126,64 @@ the test window — see the caveat below on why that result is flattering.
 
 ---
 
+## Extended run — 2026 data
+
+The 7-day dataset above is what the original study used. It is too small to
+evaluate a model on, so the pipeline was rerun on **6 792 hourly points**
+(1 January – 10 October 2026, Mohammedia), with a methodology that removes
+three of the flaws listed below:
+
+| | original run | extended run |
+|---|---|---|
+| dataset | 168 h (7 days) | 6 792 h (9+ months) |
+| split | train / test | train 5 303 · **val 719** · test 719 |
+| validation set | *the test set* | separate block |
+| scaler fitted on | whole series | **training block only** |
+| test horizon | 24 h | 719 h |
+
+Run it with `python src/train_split.py --data data/temperature_2026.csv`.
+
+![Held-out test window](figures/05_test_window.png)
+
+![Model loss](figures/04_loss_curve.png)
+
+| metric | value |
+|---|---|
+| LSTM test RMSE | **0.425 °C** |
+| LSTM test MAE | 0.298 °C |
+| persistence baseline RMSE | 0.465 °C |
+
+**The persistence baseline matters.** "Tomorrow's hour equals this hour" scores
+0.465 °C on the same window. The LSTM reaches 0.425 °C — a real improvement,
+but only about 9 %. Reporting it next to the baseline is the difference between
+a defensible claim and an inflated one, and the original study never did this.
+
+### What the longer window revealed about the PID
+
+On a 24-hour window the PID correction appeared to help. Over 719 hours, with
+the study's original gains, it makes the forecast **worse** — and a gain sweep
+isolates why:
+
+| Kp | Ki | Kd | test RMSE |
+|---|---|---|---|
+| 0.50 | **0.100** | 0.05 | 0.697 °C |
+| 0.50 | 0.010 | 0.05 | 0.199 °C |
+| 0.50 | **0.000** | 0.05 | 0.193 °C |
+| 0.50 | 0.000 | 0.00 | 0.212 °C |
+| 0.20 | 0.000 | 0.00 | 0.340 °C |
+
+The integral term is the culprit: with `Ki = 0.1` and no anti-windup, a small
+systematic bias accumulates over hundreds of steps until the correction
+overshoots badly. Twenty-four steps hid the problem; seven hundred exposed it.
+This is exactly why the Arduino sketch in [`arduino/`](arduino/) clamps its
+integral term.
+
+Note that the `Ki = 0` rows are *not* evidence of a good forecaster. They look
+excellent because the correction is fed the measured temperature — limitation 2
+below — so they measure how well the loop tracks a value it was already given.
+
+---
+
 ## Limitations
 
 These are the things I would fix if I did this project again. They are listed
@@ -146,28 +204,38 @@ an inflated claim.
    efficiency gain would do, and confirms the figure is tracking forecast error
    rather than energy.
 
+   The extended run makes it starker still: two runs of the *same script, same
+   seed, same data* gave savings of **1.95 %** and **3.40 %**, while test RMSE
+   barely moved (0.423 vs 0.425 °C). A quantity that swings by 75 % between
+   identical runs is noise, not a measurement.
+
 2. **The PID correction uses the signal it is meant to predict.** A PID acts on
    a *measured* error. Here it post-corrects a forecast using the gap to the
    actual temperature, which would not be available at inference time in a real
    deployment. This is why the corrected curve in figure 3 tracks the data
    almost perfectly. `src/pid.py` keeps the original behaviour but documents
-   the constraint.
+   the constraint. The gain sweep above shows the second half of the problem:
+   over a long horizon the original gains are not merely flattering, they are
+   actively harmful.
 
-3. **Test-set leakage.** The original run passed the test set as
-   `validation_data` while early-stopping on `val_loss`, so the test set
-   influenced model selection. Reproduced by default for fidelity; use a
-   genuine held-out validation split for an honest evaluation.
+3. ~~**Test-set leakage.**~~ **Fixed in the extended run.** The original passed
+   the test set as `validation_data` while early-stopping on `val_loss`, so the
+   test set influenced model selection. `src/train_split.py` uses a separate
+   validation block. `main.py` keeps the old behaviour so the published 7-day
+   numbers remain reproducible.
 
-4. **The test set is one daily cycle (24 points).** Far too small for the RMSE
-   to be statistically meaningful.
+4. ~~**The test set is one daily cycle (24 points).**~~ **Fixed in the extended
+   run**, which holds out 719 hours.
 
 5. **IQR outlier filtering on a time series** removes genuine temperature
    extremes and breaks the hourly continuity the LSTM depends on. Run with
-   `--no-iqr` to skip it.
+   `--no-iqr` to skip it; `train_split.py` does not apply it at all.
 
 6. **Univariate model.** Only past temperature is used. Occupancy, solar
    irradiance, humidity and internal gains all drive real HVAC load and are
-   ignored.
+   ignored. `fetch_data.py` now also downloads relative humidity and shortwave
+   radiation, so extending the model to multivariate input is the obvious next
+   step.
 
 7. **Simplified assumptions**, stated explicitly in the original study: fixed
    mass flow of 1 kg/s, room volume assumed not to affect the prediction, water
@@ -181,14 +249,27 @@ an inflated claim.
 git clone https://github.com/<your-username>/hvac-lstm-pid.git
 cd hvac-lstm-pid
 pip install -r requirements.txt
+```
 
-# 1. download hourly temperature data
+Reproduce the original 7-day study:
+
+```bash
 python src/fetch_data.py --start 2024-06-10 --end 2024-06-16 \
-    --lat 33.70 --lon -7.40 --out data/temperature.csv
-
-# 2. train, correct and evaluate
+    --out data/temperature.csv
 python src/main.py --data data/temperature.csv --no-iqr
 ```
+
+Run the extended evaluation on 2026 data (also writes an Excel copy):
+
+```bash
+python src/fetch_data.py --start 2026-01-01 --end 2026-10-10 --chunk-days 90 \
+    --out data/temperature_2026.csv --xlsx data/temperature_2026.xlsx
+python src/train_split.py --data data/temperature_2026.csv
+```
+
+`fetch_data.py` defaults to Mohammedia (33.686 N, 7.383 W); pass `--lat` and
+`--lon` for any other site. Long windows are fetched in chunks with backoff,
+since the free tier rate-limits.
 
 Generated plots are written to `outputs/`. The `figures/` directory holds the
 published results from the original study and is not overwritten by a rerun.
@@ -207,7 +288,8 @@ src/
   model.py          LSTM architecture and training
   pid.py            PID controller and forecast correction
   energy.py         Q = m_dot · cp · |T − T_ref|
-  main.py           end-to-end pipeline
+  main.py           end-to-end pipeline (reproduces the original 7-day run)
+  train_split.py    extended run: train/val/test split, baseline, gain sweep
 arduino/
   hvac_control/     Wokwi sketch: DHT22 -> PID -> servo damper (reconstructed)
 figures/            result plots from the original study, plus original diagrams

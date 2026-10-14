@@ -37,6 +37,27 @@ pinned open long after the room had cooled.
 This is the same failure that the gain sweep in the main README finds on the
 software side, where `Ki = 0.1` with no clamp degrades a 719-hour forecast.
 
+### Inside the deadband
+
+Dropping the sensor to 22.1 °C puts the error at 0.10 °C, within the ±0.3 °C
+band:
+
+![Deadband: damper closed, LED off](../figures/07_wokwi_deadband.png)
+
+The **damper returns to 0°**, the **LED goes out**, and the servo horn swings
+back. The `u` column is the interesting part — it falls 147.81 → 140.48 →
+133.52 → 126.90 → … rather than dropping to zero at once. That is the
+`integral *= 0.95` line bleeding the accumulated term off geometrically.
+
+Subtracting the proportional term (`Kp·e = 12 × 0.10 = 1.2`) recovers the
+integral itself: 183.26, 174.10, 165.40, 157.12, … Each step is **0.95000 ±
+0.00005** of the one before, so the decay the code specifies is directly
+measurable in the serial output.
+
+The deadband matters because without it the servo would chatter continuously
+around the setpoint on sensor noise, wearing out the actuator for no thermal
+benefit.
+
 | Component | Pin | Notes |
 |---|---|---|
 | DHT22 data | D2 | 10 kΩ pull-up to 5 V |
